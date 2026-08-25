@@ -1,0 +1,443 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memories</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      font-family: Arial, sans-serif;
+      background: #171717;
+      color: white;
+    }
+
+    header {
+      padding: 20px;
+      background: #242424;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    header h1 {
+      margin: 0;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 15px;
+      cursor: pointer;
+      font-size: 15px;
+    }
+
+    #newMemory {
+      background: #6c63ff;
+      color: white;
+    }
+
+    #tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      background: #202020;
+      overflow-x: auto;
+    }
+
+    .tab {
+      background: #333;
+      color: white;
+    }
+
+    .tab.active {
+      background: #6c63ff;
+    }
+
+    #memoryArea {
+      min-height: calc(100vh - 125px);
+      padding: 30px;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      transition: 0.3s;
+    }
+
+    #memoryTitle {
+      margin-top: 0;
+      text-shadow: 0 2px 5px black;
+    }
+
+    .controls {
+      background: rgba(0, 0, 0, 0.65);
+      padding: 20px;
+      border-radius: 15px;
+      max-width: 500px;
+    }
+
+    .controls input {
+      margin: 8px 0;
+      width: 100%;
+    }
+
+    #files {
+      margin-top: 25px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+      gap: 15px;
+    }
+
+    .memoryItem {
+      background: rgba(30, 30, 30, 0.9);
+      border-radius: 12px;
+      padding: 10px;
+      overflow: hidden;
+    }
+
+    .memoryItem img,
+    .memoryItem video {
+      width: 100%;
+      max-height: 250px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: black;
+    }
+
+    .empty {
+      opacity: 0.7;
+      text-align: center;
+      margin-top: 50px;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>💾 Memories</h1>
+    <button id="newMemory">+ New Memory</button>
+  </header>
+
+  <div id="tabs"></div>
+
+  <main id="memoryArea">
+
+    <h2 id="memoryTitle">Welcome!</h2>
+
+    <div class="controls">
+
+      <label>
+        Change memory name:
+        <input id="nameInput" type="text" placeholder="Memory name">
+      </label>
+
+      <label>
+        Background image:
+        <input id="backgroundInput" type="file" accept="image/*">
+      </label>
+
+      <label>
+        Add pictures or videos:
+        <input id="fileInput" type="file" accept="image/*,video/*" multiple>
+      </label>
+
+    </div>
+
+    <div id="files"></div>
+
+  </main>
+
+
+<script>
+
+  let memories = [];
+  let currentMemory = null;
+
+  const tabs = document.getElementById("tabs");
+  const memoryArea = document.getElementById("memoryArea");
+  const memoryTitle = document.getElementById("memoryTitle");
+  const nameInput = document.getElementById("nameInput");
+  const backgroundInput = document.getElementById("backgroundInput");
+  const fileInput = document.getElementById("fileInput");
+  const files = document.getElementById("files");
+
+  /*
+    Create a new memory
+  */
+
+  document.getElementById("newMemory").onclick = function () {
+
+    const name = prompt("What do you want to call this memory?");
+
+    if (!name) return;
+
+    const memory = {
+      id: Date.now(),
+      name: name,
+      background: "",
+      items: []
+    };
+
+    memories.push(memory);
+
+    saveMemories();
+    openMemory(memory.id);
+  };
+
+
+  /*
+    Open a memory
+  */
+
+  function openMemory(id) {
+
+    currentMemory = memories.find(memory => memory.id === id);
+
+    if (!currentMemory) return;
+
+    memoryTitle.textContent = currentMemory.name;
+    nameInput.value = currentMemory.name;
+
+    if (currentMemory.background) {
+      memoryArea.style.backgroundImage =
+        `url(${currentMemory.background})`;
+    } else {
+      memoryArea.style.backgroundImage = "none";
+    }
+
+    renderTabs();
+    renderFiles();
+  }
+
+
+  /*
+    Create the tabs
+  */
+
+  function renderTabs() {
+
+    tabs.innerHTML = "";
+
+    memories.forEach(memory => {
+
+      const button = document.createElement("button");
+
+      button.textContent = memory.name;
+      button.className = "tab";
+
+      if (currentMemory && memory.id === currentMemory.id) {
+        button.classList.add("active");
+      }
+
+      button.onclick = function () {
+        openMemory(memory.id);
+      };
+
+      tabs.appendChild(button);
+
+    });
+
+  }
+
+
+  /*
+    Rename memory
+  */
+
+  nameInput.addEventListener("input", function () {
+
+    if (!currentMemory) return;
+
+    currentMemory.name = nameInput.value || "Unnamed Memory";
+
+    memoryTitle.textContent = currentMemory.name;
+
+    saveMemories();
+    renderTabs();
+
+  });
+
+
+  /*
+    Change background
+  */
+
+  backgroundInput.addEventListener("change", function () {
+
+    if (!currentMemory) return;
+
+    const file = backgroundInput.files[0];
+
+    if (!file) return;
+
+    const reader = new FileReader();
+
+    reader.onload = function () {
+
+      currentMemory.background = reader.result;
+
+      memoryArea.style.backgroundImage =
+        `url(${reader.result})`;
+
+      saveMemories();
+
+    };
+
+    reader.readAsDataURL(file);
+
+  });
+
+
+  /*
+    Add pictures/videos
+  */
+
+  fileInput.addEventListener("change", function () {
+
+    if (!currentMemory) return;
+
+    const selectedFiles = Array.from(fileInput.files);
+
+    selectedFiles.forEach(file => {
+
+      const reader = new FileReader();
+
+      reader.onload = function () {
+
+        currentMemory.items.push({
+          type: file.type,
+          name: file.name,
+          data: reader.result
+        });
+
+        saveMemories();
+        renderFiles();
+
+      };
+
+      reader.readAsDataURL(file);
+
+    });
+
+    fileInput.value = "";
+
+  });
+
+
+  /*
+    Display saved files
+  */
+
+  function renderFiles() {
+
+    files.innerHTML = "";
+
+    if (!currentMemory || currentMemory.items.length === 0) {
+
+      files.innerHTML =
+        '<div class="empty">Nothing saved here yet!</div>';
+
+      return;
+
+    }
+
+    currentMemory.items.forEach(item => {
+
+      const container = document.createElement("div");
+      container.className = "memoryItem";
+
+      if (item.type.startsWith("image/")) {
+
+        const image = document.createElement("img");
+
+        image.src = item.data;
+        image.alt = item.name;
+
+        container.appendChild(image);
+
+      }
+
+      else if (item.type.startsWith("video/")) {
+
+        const video = document.createElement("video");
+
+        video.src = item.data;
+        video.controls = true;
+
+        container.appendChild(video);
+
+      }
+
+      const name = document.createElement("p");
+
+      name.textContent = item.name;
+
+      container.appendChild(name);
+
+      files.appendChild(container);
+
+    });
+
+  }
+
+
+  /*
+    Save memory information
+  */
+
+  function saveMemories() {
+
+    localStorage.setItem(
+      "memories",
+      JSON.stringify(memories)
+    );
+
+  }
+
+
+  /*
+    Load memories when the website starts
+  */
+
+  function loadMemories() {
+
+    const saved = localStorage.getItem("memories");
+
+    if (saved) {
+
+      try {
+
+        memories = JSON.parse(saved);
+
+      } catch {
+
+        memories = [];
+
+      }
+
+    }
+
+    if (memories.length > 0) {
+
+      openMemory(memories[0].id);
+
+    } else {
+
+      renderTabs();
+      renderFiles();
+
+    }
+
+  }
+
+  loadMemories();
+
+</script>
+
+</body>
+</html>
