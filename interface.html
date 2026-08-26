@@ -1,0 +1,746 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Memories</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    :root {
+      --bg: #090a0f;
+      --panel: #141621;
+      --panel2: #1b1e2c;
+      --border: rgba(255,255,255,.12);
+      --text: #ffffff;
+      --muted: #a9adbd;
+      --accent: #8b7cff;
+      --accent2: #5ee7ff;
+    }
+
+    html, body {
+      margin: 0;
+      min-height: 100%;
+      background:
+        radial-gradient(circle at top, #202449 0%, var(--bg) 55%);
+      color: var(--text);
+      font-family: Arial, sans-serif;
+    }
+
+    body {
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    button,
+    input {
+      font: inherit;
+    }
+
+    button {
+      min-height: 58px;
+      padding: 0 24px;
+      border: 0;
+      border-radius: 18px;
+      background: var(--accent);
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      box-shadow: 0 8px 25px rgba(0,0,0,.25);
+      transition: transform .15s, filter .15s;
+    }
+
+    button:hover {
+      filter: brightness(1.15);
+      transform: translateY(-2px);
+    }
+
+    button:active {
+      transform: scale(.97);
+    }
+
+    header {
+      text-align: center;
+      padding: 45px 25px 30px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: clamp(42px, 7vw, 76px);
+      letter-spacing: -2px;
+    }
+
+    header p {
+      margin: 14px auto 0;
+      max-width: 700px;
+      color: var(--muted);
+      font-size: clamp(18px, 3vw, 25px);
+    }
+
+    .create-area {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px 25px 40px;
+      display: flex;
+      gap: 14px;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    #memoryName {
+      width: min(100%, 500px);
+      min-height: 62px;
+      padding: 0 22px;
+      border-radius: 18px;
+      border: 2px solid var(--border);
+      outline: none;
+      background: rgba(20,22,33,.9);
+      color: white;
+      font-size: 21px;
+    }
+
+    #memoryName:focus {
+      border-color: var(--accent);
+    }
+
+    #tabs {
+      width: min(1200px, 100%);
+      margin: auto;
+      padding: 10px 25px 60px;
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+      gap: 22px;
+    }
+
+    .tab {
+      min-height: 210px;
+      position: relative;
+      overflow: hidden;
+      border-radius: 28px;
+      padding: 28px;
+      background: var(--panel);
+      border: 2px solid var(--border);
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      justify-content: flex-end;
+      box-shadow: 0 15px 45px rgba(0,0,0,.25);
+      transition: transform .18s, border-color .18s;
+    }
+
+    .tab:hover {
+      transform: translateY(-5px) scale(1.01);
+      border-color: rgba(139,124,255,.7);
+    }
+
+    .tab::before {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background-image: var(--background);
+      background-size: cover;
+      background-position: center;
+      opacity: .5;
+      z-index: 0;
+    }
+
+    .tab::after {
+      content: "";
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(
+        transparent 20%,
+        rgba(0,0,0,.9) 100%
+      );
+      z-index: 1;
+    }
+
+    .tab h2,
+    .tab-info {
+      position: relative;
+      z-index: 2;
+    }
+
+    .tab h2 {
+      margin: 0;
+      font-size: 30px;
+      word-break: break-word;
+    }
+
+    .tab-info {
+      margin-top: 10px;
+      color: #c7cad7;
+      font-size: 18px;
+    }
+
+    .empty {
+      grid-column: 1 / -1;
+      text-align: center;
+      padding: 80px 20px;
+      color: var(--muted);
+      font-size: 22px;
+    }
+
+    /* VIEWER */
+
+    #viewer {
+      display: none;
+      position: fixed;
+      inset: 0;
+      z-index: 100;
+      overflow-y: auto;
+      background:
+        radial-gradient(circle at top, #25294c 0%, #090a0f 60%);
+    }
+
+    .viewer-header {
+      position: sticky;
+      top: 0;
+      z-index: 110;
+      min-height: 90px;
+      padding: 15px 25px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 20px;
+      background: rgba(9,10,15,.94);
+      backdrop-filter: blur(15px);
+      border-bottom: 1px solid var(--border);
+    }
+
+    .viewer-header h2 {
+      margin: 0;
+      font-size: clamp(28px, 5vw, 45px);
+      word-break: break-word;
+    }
+
+    .viewer-content {
+      width: min(1050px, 100%);
+      margin: auto;
+      padding: 30px 25px 80px;
+    }
+
+    .locked {
+      padding: 20px;
+      margin-bottom: 25px;
+      border-radius: 20px;
+      background: rgba(20,22,33,.9);
+      border: 1px solid var(--border);
+      color: var(--muted);
+      font-size: 18px;
+    }
+
+    .actions {
+      display: flex;
+      gap: 14px;
+      flex-wrap: wrap;
+      margin-bottom: 30px;
+    }
+
+    .actions button {
+      flex: 1 1 250px;
+      min-height: 70px;
+      font-size: 20px;
+    }
+
+    #fileInput,
+    #backgroundInput {
+      display: none;
+    }
+
+    .files {
+      display: grid;
+      gap: 22px;
+    }
+
+    .file {
+      padding: 22px;
+      border-radius: 24px;
+      background: rgba(20,22,33,.95);
+      border: 1px solid var(--border);
+      box-shadow: 0 12px 35px rgba(0,0,0,.25);
+    }
+
+    .file-name {
+      margin-bottom: 16px;
+      font-size: 21px;
+      font-weight: bold;
+      word-break: break-word;
+    }
+
+    .file img {
+      display: block;
+      width: 100%;
+      max-height: 650px;
+      object-fit: contain;
+      border-radius: 16px;
+      background: #000;
+    }
+
+    .file video {
+      display: block;
+      width: 100%;
+      max-height: 700px;
+      border-radius: 16px;
+      background: #000;
+    }
+
+    .file audio {
+      width: 100%;
+      min-height: 60px;
+    }
+
+    .file a {
+      display: inline-flex;
+      align-items: center;
+      min-height: 58px;
+      padding: 0 22px;
+      border-radius: 16px;
+      background: var(--panel2);
+      color: white;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    @media (max-width: 650px) {
+      header {
+        padding-top: 30px;
+      }
+
+      #tabs {
+        grid-template-columns: 1fr;
+      }
+
+      .viewer-header {
+        align-items: center;
+      }
+
+      .viewer-header button {
+        min-height: 55px;
+        padding: 0 18px;
+      }
+
+      .viewer-content {
+        padding-left: 16px;
+        padding-right: 16px;
+      }
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>🐈 Memories</h1>
+    <p>
+      Your little place for art, projects, pictures, videos,
+      music, and everything else you want to keep.
+    </p>
+  </header>
+
+  <section class="create-area">
+    <input
+      id="memoryName"
+      type="text"
+      maxlength="60"
+      placeholder="Name your memory..."
+    >
+
+    <button onclick="createMemory()">
+      ＋ Create Memory
+    </button>
+  </section>
+
+  <main id="tabs">
+    <div class="empty">
+      Loading memories...
+    </div>
+  </main>
+
+  <section id="viewer">
+
+    <div class="viewer-header">
+      <h2 id="viewerTitle">Memory</h2>
+
+      <button onclick="closeMemory()">
+        ← Close
+      </button>
+    </div>
+
+    <div class="viewer-content">
+
+      <div class="locked">
+        🔒 This memory is permanent.
+        Files and backgrounds cannot be removed or edited.
+      </div>
+
+      <div class="actions">
+
+        <button onclick="document.getElementById('fileInput').click()">
+          📁 Upload Files
+        </button>
+
+        <button onclick="document.getElementById('backgroundInput').click()">
+          🖼️ Set Background
+        </button>
+
+      </div>
+
+      <input
+        id="fileInput"
+        type="file"
+        multiple
+        onchange="uploadFiles(event)"
+      >
+
+      <input
+        id="backgroundInput"
+        type="file"
+        accept="image/*"
+        onchange="uploadBackground(event)"
+      >
+
+      <div id="files" class="files"></div>
+
+    </div>
+  </section>
+
+  <script>
+    let currentMemory = null;
+
+    async function loadMemories() {
+      try {
+        const response = await fetch("/api/memories");
+        const data = await response.json();
+
+        const tabs = document.getElementById("tabs");
+
+        if (!data.memories || data.memories.length === 0) {
+          tabs.innerHTML = `
+            <div class="empty">
+              No memories yet.<br><br>
+              Create your first one!
+            </div>
+          `;
+          return;
+        }
+
+        tabs.innerHTML = "";
+
+        data.memories.forEach(memory => {
+          const tab = document.createElement("div");
+
+          tab.className = "tab";
+
+          tab.style.setProperty(
+            "--background",
+            memory.background
+              ? `url("${memory.background}")`
+              : "none"
+          );
+
+          const title = document.createElement("h2");
+          title.textContent = memory.name;
+
+          const info = document.createElement("div");
+          info.className = "tab-info";
+          info.textContent =
+            `${memory.fileCount} file${memory.fileCount === 1 ? "" : "s"}`;
+
+          tab.appendChild(title);
+          tab.appendChild(info);
+
+          tab.onclick = () => openMemory(memory.id);
+
+          tabs.appendChild(tab);
+        });
+
+      } catch (error) {
+        console.error(error);
+
+        document.getElementById("tabs").innerHTML = `
+          <div class="empty">
+            Couldn't connect to the Memories server.
+          </div>
+        `;
+      }
+    }
+
+    async function createMemory() {
+      const input = document.getElementById("memoryName");
+      const name = input.value.trim();
+
+      if (!name) {
+        alert("Give your memory a name first!");
+        return;
+      }
+
+      try {
+        const response = await fetch("/api/memories", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json"
+          },
+          body: JSON.stringify({ name })
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          alert(data.error || "Couldn't create memory.");
+          return;
+        }
+
+        input.value = "";
+
+        await loadMemories();
+        openMemory(data.memory.id);
+
+      } catch (error) {
+        console.error(error);
+        alert("Couldn't create the memory.");
+      }
+    }
+
+    async function openMemory(id) {
+      try {
+        const response =
+          await fetch(`/api/memories/${encodeURIComponent(id)}`);
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          alert(data.error || "Memory not found.");
+          return;
+        }
+
+        currentMemory = data.memory;
+
+        document.getElementById("viewerTitle").textContent =
+          currentMemory.name;
+
+        document.getElementById("viewer").style.display = "block";
+
+        renderFiles();
+
+      } catch (error) {
+        console.error(error);
+        alert("Couldn't open this memory.");
+      }
+    }
+
+    function closeMemory() {
+      document.getElementById("viewer").style.display = "none";
+      currentMemory = null;
+    }
+
+    function renderFiles() {
+      const container = document.getElementById("files");
+
+      container.innerHTML = "";
+
+      if (!currentMemory.files.length) {
+        container.innerHTML = `
+          <div class="empty">
+            This memory doesn't have any files yet.
+          </div>
+        `;
+        return;
+      }
+
+      currentMemory.files.forEach(file => {
+
+        const element = document.createElement("div");
+        element.className = "file";
+
+        const name = document.createElement("div");
+        name.className = "file-name";
+        name.textContent = file.name;
+
+        element.appendChild(name);
+
+        if (file.type.startsWith("image/")) {
+
+          const image = document.createElement("img");
+
+          image.src = file.url;
+          image.alt = file.name;
+          image.loading = "lazy";
+
+          element.appendChild(image);
+
+        } else if (file.type.startsWith("video/")) {
+
+          const video = document.createElement("video");
+
+          video.src = file.url;
+          video.controls = true;
+          video.playsInline = true;
+          video.preload = "metadata";
+
+          element.appendChild(video);
+
+        } else if (file.type.startsWith("audio/")) {
+
+          const audio = document.createElement("audio");
+
+          audio.src = file.url;
+          audio.controls = true;
+          audio.preload = "metadata";
+
+          element.appendChild(audio);
+
+        } else {
+
+          const link = document.createElement("a");
+
+          link.href = file.url;
+          link.target = "_blank";
+          link.rel = "noopener";
+          link.textContent = "Open / View File";
+
+          element.appendChild(link);
+        }
+
+        container.appendChild(element);
+      });
+    }
+
+    async function uploadFiles(event) {
+      if (!currentMemory) return;
+
+      const selectedFiles =
+        Array.from(event.target.files);
+
+      for (const file of selectedFiles) {
+
+        try {
+          const data = await fileToDataURL(file);
+
+          const response = await fetch(
+            `/api/memories/${encodeURIComponent(currentMemory.id)}/file`,
+            {
+              method: "POST",
+              headers: {
+                "Content-Type": "application/json"
+              },
+              body: JSON.stringify({
+                filename: file.name,
+                mimeType: file.type,
+                data
+              })
+            }
+          );
+
+          const result = await response.json();
+
+          if (!response.ok) {
+            alert(
+              result.error ||
+              `Couldn't upload ${file.name}.`
+            );
+            continue;
+          }
+
+          currentMemory.files.push(result.file);
+
+          renderFiles();
+
+        } catch (error) {
+          console.error(error);
+
+          alert(
+            `Couldn't upload ${file.name}.`
+          );
+        }
+      }
+
+      event.target.value = "";
+      loadMemories();
+    }
+
+    async function uploadBackground(event) {
+      if (!currentMemory) return;
+
+      const file = event.target.files[0];
+
+      if (!file) return;
+
+      if (!file.type.startsWith("image/")) {
+        alert("The background must be an image.");
+        event.target.value = "";
+        return;
+      }
+
+      try {
+        const data = await fileToDataURL(file);
+
+        const response = await fetch(
+          `/api/memories/${encodeURIComponent(currentMemory.id)}/background`,
+          {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json"
+            },
+            body: JSON.stringify({
+              filename: file.name,
+              mimeType: file.type,
+              data
+            })
+          }
+        );
+
+        const result = await response.json();
+
+        if (!response.ok) {
+          alert(
+            result.error ||
+            "Couldn't set the background."
+          );
+          return;
+        }
+
+        currentMemory.background = result.background;
+
+        alert("Background saved!");
+
+        loadMemories();
+
+      } catch (error) {
+        console.error(error);
+        alert("Couldn't set the background.");
+      }
+
+      event.target.value = "";
+    }
+
+    function fileToDataURL(file) {
+      return new Promise((resolve, reject) => {
+
+        const reader = new FileReader();
+
+        reader.onload = () => resolve(reader.result);
+        reader.onerror = reject;
+
+        reader.readAsDataURL(file);
+      });
+    }
+
+    document
+      .getElementById("memoryName")
+      .addEventListener("keydown", event => {
+
+        if (event.key === "Enter") {
+          createMemory();
+        }
+
+      });
+
+    loadMemories();
+  </script>
+
+</body>
+</html>
