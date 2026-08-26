@@ -299,7 +299,7 @@ async function createMemory() {
     return;
   }
 
-  if (name.length > 60) {
+  if (name.length > 70) {
     alert("The memory name is too long.");
     return;
   }
