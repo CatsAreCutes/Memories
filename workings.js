@@ -1,153 +1,262 @@
-// ==================================================
-// MEMORIES
-// Browser-only version
-// No Express
-// No Node
-// No package.json
-//
-// Files are stored as Blobs in IndexedDB.
-// Videos can be up to 5 GB EACH.
-// ==================================================
+/*
+  MEMORIES
+  ------------------------------------------------
+  This file has TWO jobs:
+
+  1. Render/Node:
+     Starts a tiny web server using only built-in Node.js.
+     No Express.
+     No package.json required.
+
+  2. Browser:
+     Runs the Memories application using IndexedDB.
+     Files are stored as Blobs instead of base64 strings.
+
+  This lets Render run:
+      node workings.js
+
+  while the browser can still load:
+      /workings.js
+*/
 
 
-// --------------------------------------------------
-// SETTINGS
-// --------------------------------------------------
+// ============================================================
+// NODE / RENDER SERVER
+// ============================================================
 
-const DB_NAME = "MemoriesBrowserDB";
-const DB_VERSION = 2;
+if (typeof document === "undefined") {
 
-const MEMORY_STORE = "memories";
-const FILE_STORE = "files";
+  const http = require("http");
+  const fs = require("fs");
+  const path = require("path");
 
-// Maximum size of ONE video.
-// 5 GB = 5 * 1024 * 1024 * 1024 bytes.
-const MAX_VIDEO_SIZE =
-  5 * 1024 * 1024 * 1024;
+  const PORT = process.env.PORT || 10000;
+  const ROOT = __dirname;
 
-// Maximum size of ONE non-video file.
-// Set to 1 GB.
-const MAX_OTHER_FILE_SIZE =
-  1 * 1024 * 1024 * 1024;
+  const MIME_TYPES = {
+    ".html": "text/html; charset=utf-8",
+    ".js": "application/javascript; charset=utf-8",
+    ".css": "text/css; charset=utf-8",
+    ".json": "application/json; charset=utf-8",
+    ".png": "image/png",
+    ".jpg": "image/jpeg",
+    ".jpeg": "image/jpeg",
+    ".gif": "image/gif",
+    ".webp": "image/webp",
+    ".svg": "image/svg+xml",
+    ".ico": "image/x-icon",
+    ".txt": "text/plain; charset=utf-8"
+  };
 
+  function safePath(urlPath) {
+    let decoded;
 
-// --------------------------------------------------
-// STATE
-// --------------------------------------------------
+    try {
+      decoded = decodeURIComponent(urlPath);
+    } catch {
+      return null;
+    }
 
-let db = null;
-let currentMemoryId = null;
+    const clean = decoded.split("?")[0];
 
-const objectURLs = new Set();
+    const requested =
+      clean === "/"
+        ? "/interface.html"
+        : clean;
 
-
-// --------------------------------------------------
-// DATABASE
-// --------------------------------------------------
-
-function openDatabase() {
-  return new Promise((resolve, reject) => {
-
-    const request =
-      indexedDB.open(
-        DB_NAME,
-        DB_VERSION
+    const fullPath =
+      path.resolve(
+        ROOT,
+        "." + requested
       );
 
-    request.onupgradeneeded = event => {
+    if (
+      fullPath !== ROOT &&
+      !fullPath.startsWith(ROOT + path.sep)
+    ) {
+      return null;
+    }
 
-      const database =
-        event.target.result;
+    return fullPath;
+  }
 
-      // ------------------------------
-      // Memories store
-      // ------------------------------
+  const server = http.createServer((req, res) => {
 
-      if (
-        !database.objectStoreNames.contains(
-          MEMORY_STORE
-        )
-      ) {
+    const filePath = safePath(req.url || "/");
 
-        const memories =
-          database.createObjectStore(
-            MEMORY_STORE,
-            {
-              keyPath: "id"
-            }
-          );
+    if (!filePath) {
+      res.writeHead(400, {
+        "Content-Type": "text/plain; charset=utf-8"
+      });
 
-        memories.createIndex(
-          "createdAt",
-          "createdAt"
-        );
+      res.end("Bad request.");
+      return;
+    }
+
+    fs.stat(filePath, (error, stats) => {
+
+      if (error || !stats.isFile()) {
+
+        res.writeHead(404, {
+          "Content-Type": "text/plain; charset=utf-8"
+        });
+
+        res.end("Not found.");
+        return;
       }
 
+      const extension =
+        path.extname(filePath).toLowerCase();
 
-      // ------------------------------
-      // Files store
-      // ------------------------------
+      const contentType =
+        MIME_TYPES[extension] ||
+        "application/octet-stream";
 
-      if (
-        !database.objectStoreNames.contains(
-          FILE_STORE
-        )
-      ) {
+      res.writeHead(200, {
+        "Content-Type": contentType,
+        "Cache-Control": "no-cache"
+      });
 
-        const files =
-          database.createObjectStore(
-            FILE_STORE,
-            {
-              keyPath: "id"
-            }
-          );
+      const stream =
+        fs.createReadStream(filePath);
 
-        files.createIndex(
-          "memoryId",
-          "memoryId"
-        );
+      stream.on("error", () => {
 
-        files.createIndex(
-          "kind",
-          "kind"
-        );
-      }
-    };
+        if (!res.headersSent) {
+          res.writeHead(500);
+        }
 
+        res.end("Server error.");
+      });
 
-    request.onsuccess = () => {
-
-      db =
-        request.result;
-
-      // If the database is closed unexpectedly,
-      // don't leave the app silently broken.
-      db.onversionchange = () => {
-        db.close();
-      };
-
-      resolve(db);
-    };
-
-
-    request.onerror = () => {
-
-      reject(
-        request.error
-      );
-    };
+      stream.pipe(res);
+    });
   });
+
+  server.listen(PORT, "0.0.0.0", () => {
+
+    console.log(
+      `Memories is running on port ${PORT}`
+    );
+
+  });
+
 }
 
 
-// --------------------------------------------------
-// MEMORY DATABASE HELPERS
-// --------------------------------------------------
+// ============================================================
+// BROWSER APPLICATION
+// ============================================================
 
-function getAllMemories() {
+else {
 
-  return new Promise(
-    (resolve, reject) => {
+  // ----------------------------------------------------------
+  // DATABASE SETTINGS
+  // ----------------------------------------------------------
+
+  const DB_NAME = "MemoriesBrowserDB";
+  const DB_VERSION = 2;
+
+  const MEMORY_STORE = "memories";
+  const FILE_STORE = "files";
+
+  let db = null;
+  let currentMemoryId = null;
+
+  const objectURLs = new Set();
+
+
+  // ----------------------------------------------------------
+  // OPEN DATABASE
+  // ----------------------------------------------------------
+
+  function openDatabase() {
+
+    return new Promise((resolve, reject) => {
+
+      const request =
+        indexedDB.open(
+          DB_NAME,
+          DB_VERSION
+        );
+
+      request.onupgradeneeded = event => {
+
+        const database =
+          event.target.result;
+
+        if (
+          !database.objectStoreNames.contains(
+            MEMORY_STORE
+          )
+        ) {
+
+          const memories =
+            database.createObjectStore(
+              MEMORY_STORE,
+              {
+                keyPath: "id"
+              }
+            );
+
+          memories.createIndex(
+            "createdAt",
+            "createdAt"
+          );
+        }
+
+
+        if (
+          !database.objectStoreNames.contains(
+            FILE_STORE
+          )
+        ) {
+
+          const files =
+            database.createObjectStore(
+              FILE_STORE,
+              {
+                keyPath: "id"
+              }
+            );
+
+          files.createIndex(
+            "memoryId",
+            "memoryId"
+          );
+        }
+
+      };
+
+
+      request.onsuccess = () => {
+
+        db = request.result;
+
+        db.onversionchange = () => {
+          db.close();
+        };
+
+        resolve(db);
+      };
+
+
+      request.onerror = () => {
+        reject(request.error);
+      };
+
+    });
+
+  }
+
+
+  // ----------------------------------------------------------
+  // MEMORY HELPERS
+  // ----------------------------------------------------------
+
+  function getAllMemories() {
+
+    return new Promise((resolve, reject) => {
 
       const transaction =
         db.transaction(
@@ -163,12 +272,10 @@ function getAllMemories() {
       const request =
         store.getAll();
 
-
       request.onsuccess = () => {
 
         const memories =
           request.result || [];
-
 
         memories.sort(
           (a, b) =>
@@ -176,26 +283,21 @@ function getAllMemories() {
             new Date(a.createdAt)
         );
 
-
         resolve(memories);
       };
 
-
       request.onerror = () => {
-
-        reject(
-          request.error
-        );
+        reject(request.error);
       };
-    }
-  );
-}
+
+    });
+
+  }
 
 
-function getMemory(id) {
+  function getMemory(id) {
 
-  return new Promise(
-    (resolve, reject) => {
+    return new Promise((resolve, reject) => {
 
       const transaction =
         db.transaction(
@@ -203,38 +305,29 @@ function getMemory(id) {
           "readonly"
         );
 
-      const store =
-        transaction.objectStore(
-          MEMORY_STORE
-        );
-
       const request =
-        store.get(id);
-
+        transaction
+          .objectStore(MEMORY_STORE)
+          .get(id);
 
       request.onsuccess = () => {
-
         resolve(
           request.result || null
         );
       };
 
-
       request.onerror = () => {
-
-        reject(
-          request.error
-        );
+        reject(request.error);
       };
-    }
-  );
-}
+
+    });
+
+  }
 
 
-function saveMemory(memory) {
+  function saveMemory(memory) {
 
-  return new Promise(
-    (resolve, reject) => {
+    return new Promise((resolve, reject) => {
 
       const transaction =
         db.transaction(
@@ -242,40 +335,27 @@ function saveMemory(memory) {
           "readwrite"
         );
 
-      const store =
-        transaction.objectStore(
-          MEMORY_STORE
-        );
-
       const request =
-        store.put(memory);
-
+        transaction
+          .objectStore(MEMORY_STORE)
+          .put(memory);
 
       request.onsuccess = () => {
-
         resolve();
       };
 
-
       request.onerror = () => {
-
-        reject(
-          request.error
-        );
+        reject(request.error);
       };
-    }
-  );
-}
+
+    });
+
+  }
 
 
-// --------------------------------------------------
-// FILE DATABASE HELPERS
-// --------------------------------------------------
+  function getFilesForMemory(memoryId) {
 
-function getFilesForMemory(memoryId) {
-
-  return new Promise(
-    (resolve, reject) => {
+    return new Promise((resolve, reject) => {
 
       const transaction =
         db.transaction(
@@ -289,80 +369,31 @@ function getFilesForMemory(memoryId) {
         );
 
       const index =
-        store.index(
-          "memoryId"
-        );
+        store.index("memoryId");
 
       const request =
         index.getAll(
-          IDBKeyRange.only(
-            memoryId
-          )
+          IDBKeyRange.only(memoryId)
         );
 
-
       request.onsuccess = () => {
-
         resolve(
           request.result || []
         );
       };
 
-
       request.onerror = () => {
-
-        reject(
-          request.error
-        );
-      };
-    }
-  );
-}
-
-
-function getFile(id) {
-
-  return new Promise(
-    (resolve, reject) => {
-
-      const transaction =
-        db.transaction(
-          FILE_STORE,
-          "readonly"
-        );
-
-      const store =
-        transaction.objectStore(
-          FILE_STORE
-        );
-
-      const request =
-        store.get(id);
-
-
-      request.onsuccess = () => {
-
-        resolve(
-          request.result || null
-        );
+        reject(request.error);
       };
 
+    });
 
-      request.onerror = () => {
-
-        reject(
-          request.error
-        );
-      };
-    }
-  );
-}
+  }
 
 
-function saveFile(fileRecord) {
+  function saveFile(fileRecord) {
 
-  return new Promise(
-    (resolve, reject) => {
+    return new Promise((resolve, reject) => {
 
       const transaction =
         db.transaction(
@@ -370,36 +401,27 @@ function saveFile(fileRecord) {
           "readwrite"
         );
 
-      const store =
-        transaction.objectStore(
-          FILE_STORE
-        );
-
       const request =
-        store.put(fileRecord);
-
+        transaction
+          .objectStore(FILE_STORE)
+          .put(fileRecord);
 
       request.onsuccess = () => {
-
         resolve();
       };
 
-
       request.onerror = () => {
-
-        reject(
-          request.error
-        );
+        reject(request.error);
       };
-    }
-  );
-}
+
+    });
+
+  }
 
 
-function deleteFileRecord(id) {
+  function deleteFileRecord(id) {
 
-  return new Promise(
-    (resolve, reject) => {
+    return new Promise((resolve, reject) => {
 
       const transaction =
         db.transaction(
@@ -407,931 +429,861 @@ function deleteFileRecord(id) {
           "readwrite"
         );
 
-      const store =
-        transaction.objectStore(
-          FILE_STORE
-        );
-
       const request =
-        store.delete(id);
-
+        transaction
+          .objectStore(FILE_STORE)
+          .delete(id);
 
       request.onsuccess = () => {
-
         resolve();
       };
 
-
       request.onerror = () => {
-
-        reject(
-          request.error
-        );
+        reject(request.error);
       };
-    }
-  );
-}
 
+    });
 
-function deleteMemoryRecord(id) {
-
-  return new Promise(
-    (resolve, reject) => {
-
-      const transaction =
-        db.transaction(
-          [
-            MEMORY_STORE,
-            FILE_STORE
-          ],
-          "readwrite"
-        );
-
-
-      const memoryStore =
-        transaction.objectStore(
-          MEMORY_STORE
-        );
-
-      const fileStore =
-        transaction.objectStore(
-          FILE_STORE
-        );
-
-
-      memoryStore.delete(id);
-
-
-      const index =
-        fileStore.index(
-          "memoryId"
-        );
-
-
-      const request =
-        index.openCursor(
-          IDBKeyRange.only(id)
-        );
-
-
-      request.onsuccess =
-        event => {
-
-          const cursor =
-            event.target.result;
-
-
-          if (cursor) {
-
-            cursor.delete();
-
-            cursor.continue();
-          }
-        };
-
-
-      transaction.oncomplete =
-        () => {
-
-          resolve();
-        };
-
-
-      transaction.onerror =
-        () => {
-
-          reject(
-            transaction.error
-          );
-        };
-    }
-  );
-}
-
-
-// --------------------------------------------------
-// ID
-// --------------------------------------------------
-
-function createId() {
-
-  if (
-    typeof crypto !== "undefined" &&
-    crypto.randomUUID
-  ) {
-
-    return crypto.randomUUID();
   }
 
 
-  return (
-    Date.now().toString(36) +
-    "-" +
-    Math.random()
-      .toString(36)
-      .slice(2)
-  );
-}
-
-
-// --------------------------------------------------
-// CREATE MEMORY
-// --------------------------------------------------
-
-async function createMemory() {
-
-  const input =
-    document.getElementById(
-      "memoryName"
-    );
-
-
-  if (!input) {
-    return;
-  }
-
-
-  const name =
-    input.value.trim();
-
-
-  if (!name) {
-
-    alert(
-      "Give your memory a name first!"
-    );
-
-    return;
-  }
-
-
-  if (name.length > 70) {
-
-    alert(
-      "The memory name is too long."
-    );
-
-    return;
-  }
-
-
-  const memory = {
-
-    id:
-      createId(),
-
-    name:
-      name,
-
-    createdAt:
-      new Date().toISOString()
-  };
-
-
-  try {
-
-    await saveMemory(
-      memory
-    );
-
-
-    input.value =
-      "";
-
-
-    await displayMemories();
-
-    await openMemory(
-      memory.id
-    );
-
-  } catch (error) {
-
-    console.error(
-      error
-    );
-
-
-    alert(
-      "Couldn't create the memory."
-    );
-  }
-}
-
-
-// --------------------------------------------------
-// DISPLAY MEMORIES
-// --------------------------------------------------
-
-async function displayMemories() {
-
-  const tabs =
-    document.getElementById(
-      "tabs"
-    );
-
-
-  if (!tabs) {
-    return;
-  }
-
-
-  tabs.innerHTML =
-    "";
-
-
-  let memories;
-
-
-  try {
-
-    memories =
-      await getAllMemories();
-
-  } catch (error) {
-
-    console.error(
-      error
-    );
-
-
-    tabs.innerHTML = `
-      <div class="empty">
-        Couldn't load your memories.
-      </div>
-    `;
-
-
-    return;
-  }
-
-
-  if (memories.length === 0) {
-
-    tabs.innerHTML = `
-      <div class="empty">
-        No memories yet.<br>
-        Create your first one!
-      </div>
-    `;
-
-
-    return;
-  }
-
-
-  for (
-    const memory of memories
-  ) {
-
-    const tab =
-      document.createElement(
-        "div"
-      );
-
-
-    tab.className =
-      "tab";
-
-
-    const title =
-      document.createElement(
-        "h2"
-      );
-
-
-    title.textContent =
-      memory.name;
-
-
-    const info =
-      document.createElement(
-        "div"
-      );
-
-
-    info.className =
-      "tab-info";
-
-
-    const files =
-      await getFilesForMemory(
-        memory.id
-      );
-
-
-    const normalFiles =
-      files.filter(
-        file =>
-          file.kind !==
-          "background"
-      );
-
-
-    info.textContent =
-      `${normalFiles.length} file` +
-      `${
-        normalFiles.length === 1
-          ? ""
-          : "s"
-      }`;
-
-
-    tab.appendChild(
-      title
-    );
-
-    tab.appendChild(
-      info
-    );
-
-
-    tab.addEventListener(
-      "click",
-      () =>
-        openMemory(
-          memory.id
-        )
-    );
-
-
-    tabs.appendChild(
-      tab
-    );
-  }
-}
-
-
-// --------------------------------------------------
-// OPEN MEMORY
-// --------------------------------------------------
-
-async function openMemory(id) {
-
-  const memory =
-    await getMemory(
-      id
-    );
-
-
-  if (!memory) {
-
-    alert(
-      "Memory not found."
-    );
-
-    return;
-  }
-
-
-  currentMemoryId =
-    memory.id;
-
-
-  const title =
-    document.getElementById(
-      "viewerTitle"
-    );
-
-
-  const viewer =
-    document.getElementById(
-      "viewer"
-    );
-
-
-  if (title) {
-
-    title.textContent =
-      memory.name;
-  }
-
-
-  if (viewer) {
-
-    viewer.style.display =
-      "block";
-  }
-
-
-  await updateViewerBackground();
-
-  await renderFiles();
-
-  await updateStorageInfo();
-}
-
-
-// --------------------------------------------------
-// CLOSE MEMORY
-// --------------------------------------------------
-
-function closeMemory() {
-
-  const viewer =
-    document.getElementById(
-      "viewer"
-    );
-
-
-  if (viewer) {
-
-    viewer.style.display =
-      "none";
-  }
-
-
-  currentMemoryId =
-    null;
-
-
-  clearObjectURLs();
-}
-
-
-// --------------------------------------------------
-// BACKGROUND
-// --------------------------------------------------
-
-async function getBackgroundForMemory(
-  memoryId
-) {
-
-  const files =
-    await getFilesForMemory(
-      memoryId
-    );
-
-
-  return (
-    files.find(
-      file =>
-        file.kind ===
-        "background"
-    ) || null
-  );
-}
-
-
-async function updateViewerBackground() {
-
-  const viewer =
-    document.getElementById(
-      "viewer"
-    );
-
-
-  if (
-    !viewer ||
-    !currentMemoryId
-  ) {
-
-    return;
-  }
-
-
-  const background =
-    await getBackgroundForMemory(
-      currentMemoryId
-    );
-
-
-  viewer.style.backgroundImage =
-    "none";
-
-
-  viewer.style.backgroundColor =
-    "#08090d";
-
-
-  if (
-    !background ||
-    !background.blob
-  ) {
-
-    return;
-  }
-
-
-  const url =
-    URL.createObjectURL(
-      background.blob
-    );
-
-
-  objectURLs.add(
-    url
-  );
-
-
-  viewer.style.backgroundImage =
-    `linear-gradient(
-      rgba(8,9,13,.78),
-      rgba(8,9,13,.92)
-    ), url("${url}")`;
-
-
-  viewer.style.backgroundSize =
-    "cover";
-
-
-  viewer.style.backgroundPosition =
-    "center";
-
-
-  viewer.style.backgroundAttachment =
-    "fixed";
-}
-
-
-async function uploadBackground(
-  event
-) {
-
-  if (!currentMemoryId) {
-    return;
-  }
-
-
-  const file =
-    event.target.files[0];
-
-
-  event.target.value =
-    "";
-
-
-  if (!file) {
-    return;
-  }
-
-
-  if (
-    !file.type.startsWith(
-      "image/"
-    )
-  ) {
-
-    alert(
-      "The viewer background must be an image."
-    );
-
-    return;
-  }
-
-
-  try {
-
-    const oldBackground =
-      await getBackgroundForMemory(
-        currentMemoryId
-      );
-
-
-    if (oldBackground) {
-
-      await deleteFileRecord(
-        oldBackground.id
-      );
+  // ----------------------------------------------------------
+  // ID
+  // ----------------------------------------------------------
+
+  function createId() {
+
+    if (
+      window.crypto &&
+      typeof window.crypto.randomUUID === "function"
+    ) {
+      return window.crypto.randomUUID();
     }
 
+    return (
+      Date.now().toString(36) +
+      "-" +
+      Math.random()
+        .toString(36)
+        .slice(2)
+    );
 
-    const backgroundRecord = {
+  }
 
-      id:
-        createId(),
 
-      memoryId:
-        currentMemoryId,
+  // ----------------------------------------------------------
+  // CREATE MEMORY
+  // ----------------------------------------------------------
 
-      kind:
-        "background",
+  async function createMemory() {
 
-      name:
-        file.name,
+    const input =
+      document.getElementById(
+        "memoryName"
+      );
 
-      type:
-        file.type,
+    if (!input) {
+      return;
+    }
 
-      size:
-        file.size,
+    const name =
+      input.value.trim();
+
+    if (!name) {
+
+      alert(
+        "Give your memory a name first!"
+      );
+
+      return;
+    }
+
+    if (name.length > 70) {
+
+      alert(
+        "The memory name is too long."
+      );
+
+      return;
+    }
+
+    const memory = {
+
+      id: createId(),
+
+      name: name,
+
+      background: null,
 
       createdAt:
-        new Date().toISOString(),
+        new Date().toISOString()
 
-      blob:
-        file
     };
 
 
-    await saveFile(
-      backgroundRecord
-    );
+    try {
+
+      await saveMemory(memory);
+
+      input.value = "";
+
+      await displayMemories();
+
+      await openMemory(memory.id);
+
+    } catch (error) {
+
+      console.error(error);
+
+      alert(
+        "Couldn't create the memory."
+      );
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // DISPLAY MEMORIES
+  // ----------------------------------------------------------
+
+  async function displayMemories() {
+
+    const tabs =
+      document.getElementById(
+        "tabs"
+      );
+
+    if (!tabs) {
+      return;
+    }
+
+    tabs.innerHTML = "";
+
+    let memories;
+
+    try {
+
+      memories =
+        await getAllMemories();
+
+    } catch (error) {
+
+      console.error(error);
+
+      tabs.innerHTML = `
+        <div class="empty">
+          Couldn't load your memories.
+        </div>
+      `;
+
+      return;
+    }
+
+
+    if (memories.length === 0) {
+
+      tabs.innerHTML = `
+        <div class="empty">
+          No memories yet.<br>
+          Create your first one!
+        </div>
+      `;
+
+      return;
+    }
+
+
+    for (const memory of memories) {
+
+      const tab =
+        document.createElement(
+          "div"
+        );
+
+      tab.className = "tab";
+
+
+      if (memory.background) {
+
+        const backgroundURL =
+          URL.createObjectURL(
+            memory.background
+          );
+
+        objectURLs.add(
+          backgroundURL
+        );
+
+        tab.style.setProperty(
+          "--background",
+          `url("${backgroundURL}")`
+        );
+
+      } else {
+
+        tab.style.setProperty(
+          "--background",
+          "none"
+        );
+
+      }
+
+
+      const title =
+        document.createElement(
+          "h2"
+        );
+
+      title.textContent =
+        memory.name;
+
+
+      const info =
+        document.createElement(
+          "div"
+        );
+
+      info.className =
+        "tab-info";
+
+
+      const files =
+        await getFilesForMemory(
+          memory.id
+        );
+
+
+      info.textContent =
+        `${files.length} file${
+          files.length === 1
+            ? ""
+            : "s"
+        }`;
+
+
+      tab.appendChild(title);
+
+      tab.appendChild(info);
+
+
+      tab.addEventListener(
+        "click",
+        () => openMemory(memory.id)
+      );
+
+
+      tabs.appendChild(tab);
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // OPEN MEMORY
+  // ----------------------------------------------------------
+
+  async function openMemory(id) {
+
+    const memory =
+      await getMemory(id);
+
+    if (!memory) {
+
+      alert(
+        "Memory not found."
+      );
+
+      return;
+    }
+
+
+    currentMemoryId =
+      memory.id;
+
+
+    const title =
+      document.getElementById(
+        "viewerTitle"
+      );
+
+    if (title) {
+      title.textContent =
+        memory.name;
+    }
+
+
+    const viewer =
+      document.getElementById(
+        "viewer"
+      );
+
+    if (viewer) {
+
+      viewer.style.display =
+        "block";
+
+    }
 
 
     await updateViewerBackground();
 
-    await displayMemories();
+    await renderFiles();
 
     await updateStorageInfo();
 
-  } catch (error) {
-
-    console.error(
-      error
-    );
-
-
-    alert(
-      "Couldn't save the viewer background."
-    );
-  }
-}
-
-
-// --------------------------------------------------
-// FILE UPLOAD
-// --------------------------------------------------
-
-async function uploadFiles(
-  event
-) {
-
-  if (!currentMemoryId) {
-    return;
   }
 
 
-  const selectedFiles =
-    Array.from(
-      event.target.files
-    );
+  // ----------------------------------------------------------
+  // CLOSE MEMORY
+  // ----------------------------------------------------------
 
+  function closeMemory() {
 
-  event.target.value =
-    "";
+    const viewer =
+      document.getElementById(
+        "viewer"
+      );
 
+    if (viewer) {
 
-  if (
-    selectedFiles.length === 0
-  ) {
+      viewer.style.display =
+        "none";
 
-    return;
-  }
-
-
-  for (
-    const file of selectedFiles
-  ) {
-
-    // --------------------------------
-    // VIDEO SIZE LIMIT
-    // --------------------------------
-
-    if (
-      file.type.startsWith(
-        "video/"
-      )
-    ) {
-
-      if (
-        file.size >
-        MAX_VIDEO_SIZE
-      ) {
-
-        alert(
-          `"${file.name}" is too large.\n\n` +
-          `Maximum video size: 5 GB\n` +
-          `This video: ${formatBytes(file.size)}`
-        );
-
-        continue;
-      }
     }
 
 
-    // --------------------------------
-    // OTHER FILE SIZE LIMIT
-    // --------------------------------
+    currentMemoryId =
+      null;
 
-    else if (
-      file.size >
-      MAX_OTHER_FILE_SIZE
-    ) {
 
-      alert(
-        `"${file.name}" is too large.\n\n` +
-        `Maximum non-video file size: 1 GB\n` +
-        `This file: ${formatBytes(file.size)}`
+    clearObjectURLs();
+
+  }
+
+
+  // ----------------------------------------------------------
+  // VIEWER BACKGROUND
+  // ----------------------------------------------------------
+
+  async function updateViewerBackground() {
+
+    const viewer =
+      document.getElementById(
+        "viewer"
       );
 
-      continue;
+    if (!viewer || !currentMemoryId) {
+      return;
+    }
+
+
+    const memory =
+      await getMemory(
+        currentMemoryId
+      );
+
+
+    if (
+      !memory ||
+      !memory.background
+    ) {
+
+      viewer.style.background =
+        "#08090d";
+
+      viewer.style.backgroundImage =
+        "none";
+
+      return;
+    }
+
+
+    const url =
+      URL.createObjectURL(
+        memory.background
+      );
+
+    objectURLs.add(url);
+
+
+    viewer.style.backgroundImage =
+      `
+        linear-gradient(
+          rgba(8, 9, 13, 0.78),
+          rgba(8, 9, 13, 0.92)
+        ),
+        url("${url}")
+      `;
+
+    viewer.style.backgroundSize =
+      "cover";
+
+    viewer.style.backgroundPosition =
+      "center";
+
+    viewer.style.backgroundAttachment =
+      "fixed";
+
+  }
+
+
+  // ----------------------------------------------------------
+  // BACKGROUND UPLOAD
+  // ----------------------------------------------------------
+
+  async function uploadBackground(event) {
+
+    if (!currentMemoryId) {
+      return;
+    }
+
+
+    const file =
+      event.target.files[0];
+
+    event.target.value = "";
+
+
+    if (!file) {
+      return;
+    }
+
+
+    if (!file.type.startsWith("image/")) {
+
+      alert(
+        "The viewer background must be an image."
+      );
+
+      return;
     }
 
 
     try {
 
-      const fileRecord = {
+      const memory =
+        await getMemory(
+          currentMemoryId
+        );
 
-        id:
-          createId(),
-
-        memoryId:
-          currentMemoryId,
-
-        kind:
-          "file",
-
-        name:
-          file.name,
-
-        type:
-          file.type ||
-          "application/octet-stream",
-
-        size:
-          file.size,
-
-        createdAt:
-          new Date().toISOString(),
-
-        // IMPORTANT:
-        // Store the actual File/Blob.
-        // Do NOT convert large videos
-        // to Base64.
-        blob:
-          file
-      };
+      if (!memory) {
+        return;
+      }
 
 
-      await saveFile(
-        fileRecord
-      );
+      /*
+        IMPORTANT:
 
+        Store the background as the
+        original File/Blob.
+
+        No base64 conversion.
+      */
+
+      memory.background =
+        file;
+
+
+      await saveMemory(memory);
+
+      await updateViewerBackground();
+
+      await displayMemories();
 
     } catch (error) {
 
-      console.error(
-        error
+      console.error(error);
+
+      alert(
+        "Couldn't save the viewer background."
+      );
+
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // FILE UPLOAD
+  // ----------------------------------------------------------
+
+  async function uploadFiles(event) {
+
+    if (!currentMemoryId) {
+      return;
+    }
+
+
+    const selectedFiles =
+      Array.from(
+        event.target.files
       );
 
 
-      // IndexedDB quota errors commonly
-      // happen when the browser refuses
-      // to store more data.
+    event.target.value = "";
 
-      if (
-        error.name ===
-        "QuotaExceededError"
-      ) {
 
-        alert(
-          `The browser ran out of storage while saving "${file.name}".\n\n` +
-          `The 5 GB limit is only the app's maximum.` +
-          ` Your browser still controls the actual storage available to this website.`
+    if (selectedFiles.length === 0) {
+      return;
+    }
+
+
+    for (
+      const file of selectedFiles
+    ) {
+
+      try {
+
+        /*
+          Store the actual File/Blob.
+
+          This is MUCH better for videos
+          than converting them to base64.
+
+          A 200 MB video remains roughly
+          200 MB instead of becoming a
+          much larger base64 string.
+        */
+
+        const fileRecord = {
+
+          id: createId(),
+
+          memoryId:
+            currentMemoryId,
+
+          name:
+            file.name,
+
+          type:
+            file.type ||
+            "application/octet-stream",
+
+          size:
+            file.size,
+
+          createdAt:
+            new Date().toISOString(),
+
+          blob:
+            file
+
+        };
+
+
+        await saveFile(
+          fileRecord
         );
 
-      } else {
+
+      } catch (error) {
+
+        console.error(
+          "Couldn't save file:",
+          error
+        );
+
 
         alert(
           `Couldn't save ${file.name}.`
         );
+
       }
+
     }
+
+
+    await renderFiles();
+
+    await displayMemories();
+
+    await updateStorageInfo();
+
   }
 
 
-  await renderFiles();
+  // ----------------------------------------------------------
+  // RENDER FILES
+  // ----------------------------------------------------------
 
-  await displayMemories();
+  async function renderFiles() {
 
-  await updateStorageInfo();
-}
-
-
-// --------------------------------------------------
-// RENDER FILES
-// --------------------------------------------------
-
-async function renderFiles() {
-
-  clearObjectURLs();
+    clearObjectURLs();
 
 
-  const container =
-    document.getElementById(
-      "files"
-    );
-
-
-  if (!container) {
-    return;
-  }
-
-
-  container.innerHTML =
-    "";
-
-
-  if (!currentMemoryId) {
-    return;
-  }
-
-
-  const allFiles =
-    await getFilesForMemory(
-      currentMemoryId
-    );
-
-
-  const files =
-    allFiles.filter(
-      file =>
-        file.kind !==
-        "background"
-    );
-
-
-  if (files.length === 0) {
-
-    container.innerHTML = `
-      <div class="empty">
-        This memory doesn't have any files yet.
-      </div>
-    `;
-
-
-    return;
-  }
-
-
-  for (
-    const file of files
-  ) {
-
-    const element =
-      document.createElement(
-        "div"
+    const container =
+      document.getElementById(
+        "files"
       );
 
 
-    element.className =
-      "file";
+    if (!container) {
+      return;
+    }
 
 
-    const name =
-      document.createElement(
-        "div"
+    container.innerHTML =
+      "";
+
+
+    if (!currentMemoryId) {
+      return;
+    }
+
+
+    const files =
+      await getFilesForMemory(
+        currentMemoryId
       );
 
 
-    name.className =
-      "file-name";
+    if (files.length === 0) {
+
+      container.innerHTML = `
+        <div class="empty">
+          This memory doesn't have
+          any files yet.
+        </div>
+      `;
+
+      return;
+    }
 
 
-    name.textContent =
-      file.name;
+    for (
+      const file of files
+    ) {
 
-
-    element.appendChild(
-      name
-    );
-
-
-    const meta =
-      document.createElement(
-        "div"
-      );
-
-
-    meta.className =
-      "file-meta";
-
-
-    meta.textContent =
-      `${file.type || "File"} • ` +
-      `${formatBytes(file.size)}`;
-
-
-    element.appendChild(
-      meta
-    );
-
-
-    if (!file.blob) {
-
-      const error =
+      const element =
         document.createElement(
           "div"
         );
 
+      element.className =
+        "file";
 
-      error.textContent =
-        "This file has no stored data.";
+
+      const name =
+        document.createElement(
+          "div"
+        );
+
+      name.className =
+        "file-name";
+
+      name.textContent =
+        file.name;
+
+      element.appendChild(
+        name
+      );
+
+
+      const meta =
+        document.createElement(
+          "div"
+        );
+
+      meta.className =
+        "file-meta";
+
+      meta.textContent =
+        `${
+          file.type ||
+          "File"
+        } • ${
+          formatBytes(file.size)
+        }`;
+
+      element.appendChild(
+        meta
+      );
+
+
+      const url =
+        URL.createObjectURL(
+          file.blob
+        );
+
+      objectURLs.add(url);
+
+
+      if (
+        file.type &&
+        file.type.startsWith(
+          "image/"
+        )
+      ) {
+
+        const image =
+          document.createElement(
+            "img"
+          );
+
+        image.src =
+          url;
+
+        image.alt =
+          file.name;
+
+        image.loading =
+          "lazy";
+
+        element.appendChild(
+          image
+        );
+
+
+      } else if (
+        file.type &&
+        file.type.startsWith(
+          "video/"
+        )
+      ) {
+
+        const video =
+          document.createElement(
+            "video"
+          );
+
+        video.src =
+          url;
+
+        video.controls =
+          true;
+
+        video.playsInline =
+          true;
+
+        video.preload =
+          "metadata";
+
+        /*
+          Makes the video behave nicely
+          on phones and VR browsers.
+        */
+
+        video.style.maxWidth =
+          "100%";
+
+        video.style.maxHeight =
+          "70vh";
+
+        element.appendChild(
+          video
+        );
+
+
+      } else if (
+        file.type &&
+        file.type.startsWith(
+          "audio/"
+        )
+      ) {
+
+        const audio =
+          document.createElement(
+            "audio"
+          );
+
+        audio.src =
+          url;
+
+        audio.controls =
+          true;
+
+        element.appendChild(
+          audio
+        );
+
+
+      } else {
+
+        const link =
+          document.createElement(
+            "a"
+          );
+
+        link.href =
+          url;
+
+        link.download =
+          file.name;
+
+        link.target =
+          "_blank";
+
+        link.textContent =
+          "Open / download file";
+
+        element.appendChild(
+          link
+        );
+
+      }
+
+
+      const deleteButton =
+        document.createElement(
+          "button"
+        );
+
+      deleteButton.className =
+        "delete-file";
+
+      deleteButton.textContent =
+        "Delete this file";
+
+
+      deleteButton.addEventListener(
+        "click",
+        async () => {
+
+          const confirmed =
+            confirm(
+              `Delete "${file.name}" from this memory?`
+            );
+
+
+          if (!confirmed) {
+            return;
+          }
+
+
+          try {
+
+            await deleteFileRecord(
+              file.id
+            );
+
+            await renderFiles();
+
+            await displayMemories();
+
+            await updateStorageInfo();
+
+          } catch (error) {
+
+            console.error(
+              error
+            );
+
+            alert(
+              "Couldn't delete the file."
+            );
+
+          }
+
+        }
+      );
 
 
       element.appendChild(
-        error
+        deleteButton
       );
 
 
@@ -1339,538 +1291,77 @@ async function renderFiles() {
         element
       );
 
-
-      continue;
     }
 
+  }
 
-    const url =
-      URL.createObjectURL(
-        file.blob
+
+  // ----------------------------------------------------------
+  // STORAGE INFORMATION
+  // ----------------------------------------------------------
+
+  async function updateStorageInfo() {
+
+    const element =
+      document.getElementById(
+        "storageInfo"
       );
 
 
-    objectURLs.add(
-      url
-    );
+    if (!element) {
+      return;
+    }
 
-
-    // --------------------------------
-    // IMAGE
-    // --------------------------------
 
     if (
-      file.type &&
-      file.type.startsWith(
-        "image/"
-      )
+      !navigator.storage ||
+      !navigator.storage.estimate
     ) {
-
-      const image =
-        document.createElement(
-          "img"
-        );
-
-
-      image.src =
-        url;
-
-
-      image.alt =
-        file.name;
-
-
-      image.loading =
-        "lazy";
-
-
-      element.appendChild(
-        image
-      );
-    }
-
-
-    // --------------------------------
-    // VIDEO
-    // --------------------------------
-
-    else if (
-      file.type &&
-      file.type.startsWith(
-        "video/"
-      )
-    ) {
-
-      const video =
-        document.createElement(
-          "video"
-        );
-
-
-      video.src =
-        url;
-
-
-      video.controls =
-        true;
-
-
-      video.playsInline =
-        true;
-
-
-      // Don't immediately load the
-      // entire giant video.
-      video.preload =
-        "metadata";
-
-
-      // Useful for VR/headset browsers.
-      video.setAttribute(
-        "playsinline",
-        ""
-      );
-
-
-      element.appendChild(
-        video
-      );
-    }
-
-
-    // --------------------------------
-    // AUDIO
-    // --------------------------------
-
-    else if (
-      file.type &&
-      file.type.startsWith(
-        "audio/"
-      )
-    ) {
-
-      const audio =
-        document.createElement(
-          "audio"
-        );
-
-
-      audio.src =
-        url;
-
-
-      audio.controls =
-        true;
-
-
-      element.appendChild(
-        audio
-      );
-    }
-
-
-    // --------------------------------
-    // OTHER FILE
-    // --------------------------------
-
-    else {
-
-      const link =
-        document.createElement(
-          "a"
-        );
-
-
-      link.href =
-        url;
-
-
-      link.download =
-        file.name;
-
-
-      link.target =
-        "_blank";
-
-
-      link.textContent =
-        "Open / download file";
-
-
-      element.appendChild(
-        link
-      );
-    }
-
-
-    // --------------------------------
-    // DELETE BUTTON
-    // --------------------------------
-
-    const deleteButton =
-      document.createElement(
-        "button"
-      );
-
-
-    deleteButton.className =
-      "delete-file";
-
-
-    deleteButton.textContent =
-      "Delete this file";
-
-
-    deleteButton.addEventListener(
-      "click",
-      async () => {
-
-        const confirmed =
-          confirm(
-            `Delete "${file.name}" from this memory?`
-          );
-
-
-        if (!confirmed) {
-          return;
-        }
-
-
-        try {
-
-          await deleteFileRecord(
-            file.id
-          );
-
-
-          await renderFiles();
-
-          await displayMemories();
-
-          await updateStorageInfo();
-
-
-        } catch (error) {
-
-          console.error(
-            error
-          );
-
-
-          alert(
-            "Couldn't delete the file."
-          );
-        }
-      }
-    );
-
-
-    element.appendChild(
-      deleteButton
-    );
-
-
-    container.appendChild(
-      element
-    );
-  }
-}
-
-
-// --------------------------------------------------
-// STORAGE INFORMATION
-// --------------------------------------------------
-
-async function updateStorageInfo() {
-
-  const element =
-    document.getElementById(
-      "storageInfo"
-    );
-
-
-  if (!element) {
-    return;
-  }
-
-
-  if (
-    !navigator.storage ||
-    !navigator.storage.estimate
-  ) {
-
-    element.textContent =
-      "Browser storage information is unavailable.";
-
-    return;
-  }
-
-
-  try {
-
-    const estimate =
-      await navigator.storage.estimate();
-
-
-    const used =
-      estimate.usage || 0;
-
-
-    const quota =
-      estimate.quota || 0;
-
-
-    if (quota > 0) {
-
-      const percent =
-        (
-          (used / quota) *
-          100
-        ).toFixed(1);
-
 
       element.textContent =
-        `Browser storage: ` +
-        `${formatBytes(used)} used ` +
-        `of approximately ` +
-        `${formatBytes(quota)} ` +
-        `(${percent}%).`;
+        "Browser storage information is unavailable.";
 
-    } else {
-
-      element.textContent =
-        `Browser storage used: ` +
-        `${formatBytes(used)}.`;
+      return;
     }
 
-
-  } catch (error) {
-
-    console.error(
-      error
-    );
-
-
-    element.textContent =
-      "Couldn't calculate browser storage.";
-  }
-}
-
-
-// --------------------------------------------------
-// UTILITIES
-// --------------------------------------------------
-
-function formatBytes(bytes) {
-
-  if (
-    !Number.isFinite(bytes) ||
-    bytes <= 0
-  ) {
-
-    return "0 B";
-  }
-
-
-  const units = [
-    "B",
-    "KB",
-    "MB",
-    "GB",
-    "TB"
-  ];
-
-
-  let value =
-    bytes;
-
-
-  let index =
-    0;
-
-
-  while (
-    value >= 1024 &&
-    index <
-      units.length - 1
-  ) {
-
-    value /=
-      1024;
-
-    index++;
-  }
-
-
-  return (
-    value.toFixed(
-      value >= 100
-        ? 0
-        : value >= 10
-          ? 1
-          : 2
-    ) +
-    " " +
-    units[index]
-  );
-}
-
-
-function clearObjectURLs() {
-
-  for (
-    const url of objectURLs
-  ) {
-
-    URL.revokeObjectURL(
-      url
-    );
-  }
-
-
-  objectURLs.clear();
-}
-
-
-// --------------------------------------------------
-// BUTTONS / EVENTS
-// --------------------------------------------------
-
-document.addEventListener(
-  "DOMContentLoaded",
-  async () => {
 
     try {
 
-      await openDatabase();
+      const estimate =
+        await navigator.storage.estimate();
 
 
-      const createButton =
-        document.getElementById(
-          "createButton"
-        );
+      const used =
+        estimate.usage || 0;
+
+      const quota =
+        estimate.quota || 0;
 
 
-      const closeButton =
-        document.getElementById(
-          "closeButton"
-        );
+      if (quota > 0) {
+
+        const percent =
+          (
+            (used / quota) *
+            100
+          ).toFixed(1);
 
 
-      const uploadButton =
-        document.getElementById(
-          "uploadButton"
-        );
+        element.textContent =
+          `Browser storage: ${
+            formatBytes(used)
+          } used of approximately ${
+            formatBytes(quota)
+          } (${percent}%).`;
 
+      } else {
 
-      const backgroundButton =
-        document.getElementById(
-          "backgroundButton"
-        );
+        element.textContent =
+          `Browser storage used: ${
+            formatBytes(used)
+          }.`;
 
-
-      const fileInput =
-        document.getElementById(
-          "fileInput"
-        );
-
-
-      const backgroundInput =
-        document.getElementById(
-          "backgroundInput"
-        );
-
-
-      const memoryName =
-        document.getElementById(
-          "memoryName"
-        );
-
-
-      if (createButton) {
-
-        createButton.addEventListener(
-          "click",
-          createMemory
-        );
       }
-
-
-      if (closeButton) {
-
-        closeButton.addEventListener(
-          "click",
-          closeMemory
-        );
-      }
-
-
-      if (
-        uploadButton &&
-        fileInput
-      ) {
-
-        uploadButton.addEventListener(
-          "click",
-          () =>
-            fileInput.click()
-        );
-      }
-
-
-      if (
-        backgroundButton &&
-        backgroundInput
-      ) {
-
-        backgroundButton.addEventListener(
-          "click",
-          () =>
-            backgroundInput.click()
-        );
-      }
-
-
-      if (fileInput) {
-
-        fileInput.addEventListener(
-          "change",
-          uploadFiles
-        );
-      }
-
-
-      if (backgroundInput) {
-
-        backgroundInput.addEventListener(
-          "change",
-          uploadBackground
-        );
-      }
-
-
-      if (memoryName) {
-
-        memoryName.addEventListener(
-          "keydown",
-          event => {
-
-            if (
-              event.key ===
-              "Enter"
-            ) {
-
-              createMemory();
-            }
-          }
-        );
-      }
-
-
-      await displayMemories();
-
-      await updateStorageInfo();
-
 
     } catch (error) {
 
@@ -1878,32 +1369,270 @@ document.addEventListener(
         error
       );
 
+      element.textContent =
+        "Couldn't calculate browser storage.";
 
-      const tabs =
-        document.getElementById(
-          "tabs"
+    }
+
+  }
+
+
+  // ----------------------------------------------------------
+  // UTILITIES
+  // ----------------------------------------------------------
+
+  function formatBytes(bytes) {
+
+    if (
+      !Number.isFinite(bytes) ||
+      bytes <= 0
+    ) {
+
+      return "0 B";
+
+    }
+
+
+    const units = [
+      "B",
+      "KB",
+      "MB",
+      "GB",
+      "TB"
+    ];
+
+
+    let value =
+      bytes;
+
+    let index =
+      0;
+
+
+    while (
+      value >= 1024 &&
+      index <
+        units.length - 1
+    ) {
+
+      value /=
+        1024;
+
+      index++;
+
+    }
+
+
+    return (
+      value.toFixed(
+        value >= 100
+          ? 0
+          : value >= 10
+            ? 1
+            : 2
+      ) +
+      " " +
+      units[index]
+    );
+
+  }
+
+
+  function clearObjectURLs() {
+
+    for (
+      const url of objectURLs
+    ) {
+
+      URL.revokeObjectURL(
+        url
+      );
+
+    }
+
+    objectURLs.clear();
+
+  }
+
+
+  // ----------------------------------------------------------
+  // START APPLICATION
+  // ----------------------------------------------------------
+
+  document.addEventListener(
+    "DOMContentLoaded",
+    async () => {
+
+      try {
+
+        await openDatabase();
+
+
+        const createButton =
+          document.getElementById(
+            "createButton"
+          );
+
+        if (createButton) {
+
+          createButton.addEventListener(
+            "click",
+            createMemory
+          );
+
+        }
+
+
+        const closeButton =
+          document.getElementById(
+            "closeButton"
+          );
+
+        if (closeButton) {
+
+          closeButton.addEventListener(
+            "click",
+            closeMemory
+          );
+
+        }
+
+
+        const uploadButton =
+          document.getElementById(
+            "uploadButton"
+          );
+
+        const fileInput =
+          document.getElementById(
+            "fileInput"
+          );
+
+
+        if (
+          uploadButton &&
+          fileInput
+        ) {
+
+          uploadButton.addEventListener(
+            "click",
+            () => fileInput.click()
+          );
+
+        }
+
+
+        const backgroundButton =
+          document.getElementById(
+            "backgroundButton"
+          );
+
+        const backgroundInput =
+          document.getElementById(
+            "backgroundInput"
+          );
+
+
+        if (
+          backgroundButton &&
+          backgroundInput
+        ) {
+
+          backgroundButton.addEventListener(
+            "click",
+            () => backgroundInput.click()
+          );
+
+        }
+
+
+        if (fileInput) {
+
+          fileInput.addEventListener(
+            "change",
+            uploadFiles
+          );
+
+        }
+
+
+        if (backgroundInput) {
+
+          backgroundInput.addEventListener(
+            "change",
+            uploadBackground
+          );
+
+        }
+
+
+        const memoryName =
+          document.getElementById(
+            "memoryName"
+          );
+
+
+        if (memoryName) {
+
+          memoryName.addEventListener(
+            "keydown",
+            event => {
+
+              if (
+                event.key === "Enter"
+              ) {
+
+                createMemory();
+
+              }
+
+            }
+          );
+
+        }
+
+
+        await displayMemories();
+
+        await updateStorageInfo();
+
+
+      } catch (error) {
+
+        console.error(
+          "Memories startup error:",
+          error
         );
 
 
-      if (tabs) {
+        const tabs =
+          document.getElementById(
+            "tabs"
+          );
 
-        tabs.innerHTML = `
-          <div class="empty">
-            Your browser could not start the
-            Memories storage system.
-          </div>
-        `;
+
+        if (tabs) {
+
+          tabs.innerHTML = `
+            <div class="empty">
+              Your browser could not start
+              the Memories storage system.
+              <br><br>
+              ${error.message || ""}
+            </div>
+          `;
+
+        }
+
       }
+
     }
-  }
-);
+  );
 
 
-// --------------------------------------------------
-// CLEANUP
-// --------------------------------------------------
+  window.addEventListener(
+    "beforeunload",
+    clearObjectURLs
+  );
 
-window.addEventListener(
-  "beforeunload",
-  clearObjectURLs
-);
+}
