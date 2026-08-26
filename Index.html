@@ -1,0 +1,956 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Memories</title>
+
+  <style>
+    * {
+      box-sizing: border-box;
+    }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      font-family: Arial, sans-serif;
+      background: #171717;
+      color: white;
+    }
+
+    header {
+      padding: 18px 20px;
+      background: #242424;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 15px;
+    }
+
+    header h1 {
+      margin: 0;
+      font-size: 26px;
+    }
+
+    button {
+      border: none;
+      border-radius: 10px;
+      padding: 10px 15px;
+      cursor: pointer;
+      font-size: 15px;
+      color: white;
+      background: #333;
+    }
+
+    button:hover {
+      filter: brightness(1.15);
+    }
+
+    #newMemory {
+      background: #6c63ff;
+    }
+
+    #tabs {
+      display: flex;
+      gap: 8px;
+      padding: 12px;
+      background: #202020;
+      overflow-x: auto;
+      min-height: 58px;
+    }
+
+    .tab {
+      background: #333;
+      color: white;
+      white-space: nowrap;
+    }
+
+    .tab.active {
+      background: #6c63ff;
+    }
+
+    #memoryArea {
+      min-height: calc(100vh - 120px);
+      padding: 30px;
+      background-size: cover;
+      background-position: center;
+      background-repeat: no-repeat;
+      transition: background-image 0.3s;
+    }
+
+    #memoryTitle {
+      margin-top: 0;
+      font-size: 32px;
+      text-shadow: 0 2px 6px black;
+    }
+
+    .controls {
+      background: rgba(0, 0, 0, 0.7);
+      padding: 20px;
+      border-radius: 15px;
+      max-width: 550px;
+      backdrop-filter: blur(5px);
+    }
+
+    .control {
+      margin-bottom: 18px;
+    }
+
+    .control:last-child {
+      margin-bottom: 0;
+    }
+
+    .control label {
+      display: block;
+      margin-bottom: 7px;
+      font-weight: bold;
+    }
+
+    .controls input[type="text"] {
+      width: 100%;
+      padding: 10px;
+      border: none;
+      border-radius: 8px;
+      font-size: 15px;
+    }
+
+    .controls input[type="file"] {
+      width: 100%;
+    }
+
+    .danger {
+      background: #a83232;
+      margin-top: 10px;
+    }
+
+    #files {
+      margin-top: 25px;
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(190px, 1fr));
+      gap: 15px;
+    }
+
+    .memoryItem {
+      background: rgba(30, 30, 30, 0.92);
+      border-radius: 12px;
+      padding: 10px;
+      overflow: hidden;
+    }
+
+    .memoryItem img,
+    .memoryItem video {
+      display: block;
+      width: 100%;
+      max-height: 250px;
+      object-fit: contain;
+      border-radius: 8px;
+      background: black;
+    }
+
+    .memoryItem p {
+      margin: 10px 0 5px;
+      word-break: break-word;
+    }
+
+    .deleteFile {
+      background: #7d2929;
+      width: 100%;
+    }
+
+    .empty {
+      opacity: 0.75;
+      text-align: center;
+      margin-top: 50px;
+      font-size: 18px;
+    }
+
+    .welcome {
+      max-width: 600px;
+      margin: 50px auto;
+      text-align: center;
+      background: rgba(0, 0, 0, 0.65);
+      padding: 35px;
+      border-radius: 20px;
+    }
+
+    .welcome h2 {
+      font-size: 30px;
+    }
+
+    .welcome p {
+      line-height: 1.6;
+      opacity: 0.85;
+    }
+  </style>
+</head>
+
+<body>
+
+  <header>
+    <h1>💾 Memories</h1>
+
+    <button id="newMemory">
+      + New Memory
+    </button>
+  </header>
+
+
+  <div id="tabs"></div>
+
+
+  <main id="memoryArea">
+
+    <div id="welcome" class="welcome">
+      <h2>Welcome to Memories!</h2>
+
+      <p>
+        Create your own memory space, give it a name,
+        customize its background, and save pictures or videos.
+      </p>
+
+      <button id="welcomeNewMemory">
+        Create Your First Memory
+      </button>
+    </div>
+
+
+    <section id="memoryContent" style="display: none;">
+
+      <h2 id="memoryTitle"></h2>
+
+
+      <div class="controls">
+
+        <div class="control">
+          <label for="nameInput">
+            Memory name
+          </label>
+
+          <input
+            id="nameInput"
+            type="text"
+            placeholder="Memory name"
+          >
+        </div>
+
+
+        <div class="control">
+          <label for="backgroundInput">
+            Custom background
+          </label>
+
+          <input
+            id="backgroundInput"
+            type="file"
+            accept="image/*"
+          >
+        </div>
+
+
+        <div class="control">
+          <label for="fileInput">
+            Add pictures or videos
+          </label>
+
+          <input
+            id="fileInput"
+            type="file"
+            accept="image/*,video/*"
+            multiple
+          >
+        </div>
+
+
+        <button id="deleteMemory" class="danger">
+          Delete This Memory
+        </button>
+
+      </div>
+
+
+      <div id="files"></div>
+
+    </section>
+
+  </main>
+
+
+  <script>
+
+    /*
+      ==========================
+      MEMORIES APP
+      ==========================
+    */
+
+
+    let memories = [];
+
+    let currentMemory = null;
+
+
+    /*
+      Get HTML elements
+    */
+
+    const tabs =
+      document.getElementById("tabs");
+
+    const memoryArea =
+      document.getElementById("memoryArea");
+
+    const memoryTitle =
+      document.getElementById("memoryTitle");
+
+    const memoryContent =
+      document.getElementById("memoryContent");
+
+    const welcome =
+      document.getElementById("welcome");
+
+    const nameInput =
+      document.getElementById("nameInput");
+
+    const backgroundInput =
+      document.getElementById("backgroundInput");
+
+    const fileInput =
+      document.getElementById("fileInput");
+
+    const files =
+      document.getElementById("files");
+
+    const newMemoryButton =
+      document.getElementById("newMemory");
+
+    const welcomeNewMemory =
+      document.getElementById("welcomeNewMemory");
+
+    const deleteMemoryButton =
+      document.getElementById("deleteMemory");
+
+
+    /*
+      ==========================
+      CREATE MEMORY
+      ==========================
+    */
+
+    function createMemory() {
+
+      const name =
+        prompt("What do you want to call this memory?");
+
+      if (!name || !name.trim()) {
+        return;
+      }
+
+
+      const memory = {
+
+        id: Date.now(),
+
+        name: name.trim(),
+
+        background: "",
+
+        items: []
+
+      };
+
+
+      memories.push(memory);
+
+      saveMemories();
+
+      openMemory(memory.id);
+
+    }
+
+
+    newMemoryButton.onclick =
+      createMemory;
+
+    welcomeNewMemory.onclick =
+      createMemory;
+
+
+    /*
+      ==========================
+      OPEN MEMORY
+      ==========================
+    */
+
+    function openMemory(id) {
+
+      const memory =
+        memories.find(
+          memory => memory.id === id
+        );
+
+
+      if (!memory) {
+        return;
+      }
+
+
+      currentMemory = memory;
+
+
+      welcome.style.display =
+        "none";
+
+      memoryContent.style.display =
+        "block";
+
+
+      memoryTitle.textContent =
+        currentMemory.name;
+
+
+      nameInput.value =
+        currentMemory.name;
+
+
+      if (currentMemory.background) {
+
+        memoryArea.style.backgroundImage =
+          `url("${currentMemory.background}")`;
+
+      } else {
+
+        memoryArea.style.backgroundImage =
+          "none";
+
+      }
+
+
+      renderTabs();
+
+      renderFiles();
+
+    }
+
+
+    /*
+      ==========================
+      RENDER TABS
+      ==========================
+    */
+
+    function renderTabs() {
+
+      tabs.innerHTML = "";
+
+
+      memories.forEach(memory => {
+
+        const button =
+          document.createElement("button");
+
+
+        button.className =
+          "tab";
+
+
+        button.textContent =
+          memory.name;
+
+
+        if (
+          currentMemory &&
+          memory.id === currentMemory.id
+        ) {
+
+          button.classList.add("active");
+
+        }
+
+
+        button.onclick = function() {
+
+          openMemory(memory.id);
+
+        };
+
+
+        tabs.appendChild(button);
+
+      });
+
+    }
+
+
+    /*
+      ==========================
+      RENAME MEMORY
+      ==========================
+    */
+
+    nameInput.addEventListener(
+      "input",
+      function() {
+
+        if (!currentMemory) {
+          return;
+        }
+
+
+        let newName =
+          nameInput.value.trim();
+
+
+        if (!newName) {
+          newName = "Unnamed Memory";
+        }
+
+
+        currentMemory.name =
+          newName;
+
+
+        memoryTitle.textContent =
+          newName;
+
+
+        saveMemories();
+
+        renderTabs();
+
+      }
+    );
+
+
+    /*
+      ==========================
+      CHANGE BACKGROUND
+      ==========================
+    */
+
+    backgroundInput.addEventListener(
+      "change",
+      function() {
+
+        if (!currentMemory) {
+          return;
+        }
+
+
+        const file =
+          backgroundInput.files[0];
+
+
+        if (!file) {
+          return;
+        }
+
+
+        if (!file.type.startsWith("image/")) {
+
+          alert(
+            "Please choose an image."
+          );
+
+          return;
+
+        }
+
+
+        const reader =
+          new FileReader();
+
+
+        reader.onload =
+          function(event) {
+
+            currentMemory.background =
+              event.target.result;
+
+
+            memoryArea.style.backgroundImage =
+              `url("${event.target.result}")`;
+
+
+            saveMemories();
+
+          };
+
+
+        reader.readAsDataURL(file);
+
+      }
+    );
+
+
+    /*
+      ==========================
+      ADD FILES
+      ==========================
+    */
+
+    fileInput.addEventListener(
+      "change",
+      function() {
+
+        if (!currentMemory) {
+          return;
+        }
+
+
+        const selectedFiles =
+          Array.from(fileInput.files);
+
+
+        selectedFiles.forEach(file => {
+
+          const reader =
+            new FileReader();
+
+
+          reader.onload =
+            function(event) {
+
+              currentMemory.items.push({
+
+                id: Date.now() +
+                  Math.random(),
+
+                type: file.type,
+
+                name: file.name,
+
+                data: event.target.result
+
+              });
+
+
+              saveMemories();
+
+              renderFiles();
+
+            };
+
+
+          reader.readAsDataURL(file);
+
+        });
+
+
+        fileInput.value = "";
+
+      }
+    );
+
+
+    /*
+      ==========================
+      DISPLAY FILES
+      ==========================
+    */
+
+    function renderFiles() {
+
+      files.innerHTML = "";
+
+
+      if (
+        !currentMemory ||
+        currentMemory.items.length === 0
+      ) {
+
+        files.innerHTML =
+          `<div class="empty">
+            Nothing saved here yet!
+          </div>`;
+
+        return;
+
+      }
+
+
+      currentMemory.items.forEach(item => {
+
+        const container =
+          document.createElement("div");
+
+
+        container.className =
+          "memoryItem";
+
+
+        /*
+          Image
+        */
+
+        if (
+          item.type.startsWith("image/")
+        ) {
+
+          const image =
+            document.createElement("img");
+
+
+          image.src =
+            item.data;
+
+
+          image.alt =
+            item.name;
+
+
+          container.appendChild(image);
+
+        }
+
+
+        /*
+          Video
+        */
+
+        else if (
+          item.type.startsWith("video/")
+        ) {
+
+          const video =
+            document.createElement("video");
+
+
+          video.src =
+            item.data;
+
+
+          video.controls =
+            true;
+
+
+          container.appendChild(video);
+
+        }
+
+
+        /*
+          File name
+        */
+
+        const name =
+          document.createElement("p");
+
+
+        name.textContent =
+          item.name;
+
+
+        container.appendChild(name);
+
+
+        /*
+          Delete button
+        */
+
+        const deleteButton =
+          document.createElement("button");
+
+
+        deleteButton.className =
+          "deleteFile";
+
+
+        deleteButton.textContent =
+          "Delete";
+
+
+        deleteButton.onclick =
+          function() {
+
+            deleteFile(item.id);
+
+          };
+
+
+        container.appendChild(
+          deleteButton
+        );
+
+
+        files.appendChild(container);
+
+      });
+
+    }
+
+
+    /*
+      ==========================
+      DELETE FILE
+      ==========================
+    */
+
+    function deleteFile(id) {
+
+      if (!currentMemory) {
+        return;
+      }
+
+
+      currentMemory.items =
+        currentMemory.items.filter(
+          item => item.id !== id
+        );
+
+
+      saveMemories();
+
+      renderFiles();
+
+    }
+
+
+    /*
+      ==========================
+      DELETE MEMORY
+      ==========================
+    */
+
+    deleteMemoryButton.onclick =
+      function() {
+
+        if (!currentMemory) {
+          return;
+        }
+
+
+        const confirmed =
+          confirm(
+            `Delete "${currentMemory.name}"?`
+          );
+
+
+        if (!confirmed) {
+          return;
+        }
+
+
+        memories =
+          memories.filter(
+            memory =>
+              memory.id !== currentMemory.id
+          );
+
+
+        currentMemory = null;
+
+
+        saveMemories();
+
+        renderTabs();
+
+
+        memoryContent.style.display =
+          "none";
+
+
+        welcome.style.display =
+          "block";
+
+
+        memoryArea.style.backgroundImage =
+          "none";
+
+      };
+
+
+    /*
+      ==========================
+      SAVE
+      ==========================
+    */
+
+    function saveMemories() {
+
+      try {
+
+        localStorage.setItem(
+          "memories",
+          JSON.stringify(memories)
+        );
+
+      } catch (error) {
+
+        console.error(
+          "Could not save Memories:",
+          error
+        );
+
+
+        alert(
+          "The browser ran out of storage space. Large videos may not fit in local storage."
+        );
+
+      }
+
+    }
+
+
+    /*
+      ==========================
+      LOAD
+      ==========================
+    */
+
+    function loadMemories() {
+
+      const saved =
+        localStorage.getItem(
+          "memories"
+        );
+
+
+      if (saved) {
+
+        try {
+
+          memories =
+            JSON.parse(saved);
+
+        } catch (error) {
+
+          console.error(
+            "Could not load Memories:",
+            error
+          );
+
+          memories = [];
+
+        }
+
+      }
+
+
+      if (memories.length > 0) {
+
+        openMemory(
+          memories[0].id
+        );
+
+      } else {
+
+        renderTabs();
+
+        renderFiles();
+
+      }
+
+    }
+
+
+    /*
+      Start the app
+    */
+
+    loadMemories();
+
+  </script>
+
+</body>
+</html>
